@@ -61,7 +61,7 @@ class MLP:
             if patience_counter >= patience:
                 self.learning_rate *= decay
                 patience_counter = 0
-            print(f"Época {epoch}, erro médio: {error}, lr: {self.learning_rate:.6f}")  # <-- Agora imprime a cada época
+            # print(f"Época {epoch}, erro médio: {error}, lr: {self.learning_rate:.6f}")  # <-- Agora imprime a cada época
         if save_error_path:
             with open(save_error_path, 'w') as f:
                 for e in errors:
@@ -78,6 +78,49 @@ def one_hot_encode(y):
     one_hot = np.zeros((len(y), len(classes)))
     one_hot[np.arange(len(y)), y_idx] = 1
     return one_hot, classes
+
+def cross_validate_mlp(X, y, n_splits, n_inputs, n_outputs, hidden_grid, lr_grid, epochs=1000, seed=42):
+    """
+    Realiza validação cruzada k-fold para o MLP implementado do zero.
+    Retorna o melhor conjunto de hiperparâmetros e a acurácia média.
+    """
+    np.random.seed(seed)
+    n_samples = X.shape[0]
+    indices = np.arange(n_samples)
+    np.random.shuffle(indices)
+    fold_sizes = np.full(n_splits, n_samples // n_splits, dtype=int)
+    fold_sizes[:n_samples % n_splits] += 1
+    current = 0
+    folds = []
+    for fold_size in fold_sizes:
+        start, stop = current, current + fold_size
+        folds.append(indices[start:stop])
+        current = stop
+
+    best_acc = 0
+    best_params = None
+    for n_hidden in hidden_grid:
+        for lr in lr_grid:
+            accs = []
+            for i in range(n_splits):
+                val_idx = folds[i]
+                train_idx = np.hstack([folds[j] for j in range(n_splits) if j != i])
+                X_train_cv, y_train_cv = X[train_idx], y[train_idx]
+                X_val_cv, y_val_cv = X[val_idx], y[val_idx]
+                mlp = MLP(n_inputs=n_inputs, n_hidden=n_hidden, n_outputs=n_outputs, learning_rate=lr, seed=seed)
+                mlp.train(X_train_cv, y_train_cv, epochs=epochs)
+                outputs = mlp.predict(X_val_cv)
+                y_pred_labels = np.argmax(outputs, axis=1)
+                y_true_labels = np.argmax(y_val_cv, axis=1)
+                acc = np.mean(y_pred_labels == y_true_labels)
+                accs.append(acc)
+            mean_acc = np.mean(accs)
+            # print(f"n_hidden={n_hidden}, lr={lr}, acurácia média validação cruzada: {mean_acc:.4f}")
+            if mean_acc > best_acc:
+                best_acc = mean_acc
+                best_params = (n_hidden, lr)
+    # print(f"\nMelhor configuração (validação cruzada): n_hidden={best_params[0]}, learning_rate={best_params[1]}, acurácia média={best_acc:.4f}")
+    return best_params, best_acc
 
 if __name__ == "__main__":
     # Carrega X e y
@@ -113,9 +156,10 @@ if __name__ == "__main__":
     output_dir = "saidas_caracteres"
     os.makedirs(output_dir, exist_ok=True)
 
+    # Treinamento com grid search
     for n_hidden in hidden_grid:
         for lr in lr_grid:
-            print(f"\nTreinando com n_hidden={n_hidden}, learning_rate={lr}")
+            # print(f"\nTreinando com n_hidden={n_hidden}, learning_rate={lr}")
             mlp = MLP(n_inputs=n_inputs, n_hidden=n_hidden, n_outputs=n_outputs, learning_rate=lr, seed=42)
             mlp.train(X_train, y_train, epochs=1000)  # Reduza epochs para grid search rápido
 
@@ -124,10 +168,14 @@ if __name__ == "__main__":
             y_pred_labels = np.argmax(outputs, axis=1)
             y_true_labels = np.argmax(y_test, axis=1)
             acc = np.mean(y_pred_labels == y_true_labels)
-            print(f"Acurácia no teste: {acc:.4f}")
+            # print(f"Acurácia no teste: {acc:.4f}")
 
             if acc > best_acc:
                 best_acc = acc
                 best_params = (n_hidden, lr)
 
-    print(f"\nMelhor configuração: n_hidden={best_params[0]}, learning_rate={best_params[1]}, acurácia={best_acc:.4f}")
+    print(f"\nMelhor configuração (Grid Search): n_hidden={best_params[0]}, learning_rate={best_params[1]}, acurácia={best_acc:.4f}")
+
+    # Exemplo de uso da validação cruzada:
+    best_params, best_acc = cross_validate_mlp(X_train, y_train, n_splits=5, n_inputs=n_inputs, n_outputs=n_outputs, hidden_grid=hidden_grid, lr_grid=lr_grid, epochs=300)
+    print(f"Melhor configuração (CV): n_hidden={best_params[0]}, learning_rate={best_params[1]}, acurácia média={best_acc:.4f}")

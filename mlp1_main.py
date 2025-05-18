@@ -111,7 +111,7 @@ def one_hot_encode(y):
     one_hot[np.arange(len(y)), y_idx] = 1
     return one_hot, classes
 
-def grid_search_mlp(X_train, y_train,X_test, y_test, n_inputs, n_outputs, hidden_grid, lr_grid, epochs=1000, seed=None):
+def grid_search_mlp(X_train, y_train,X_test, y_test, n_inputs, n_outputs, hidden_grid, lr_grid, epochs=1000, seed=42):
     """
     Realiza uma busca em grade (grid search) para encontrar a melhor configuração
     de hiperparâmetros para a rede neural MLP.
@@ -236,11 +236,19 @@ if __name__ == "__main__":
 
     # Defina os grids de hiperparâmetros
     hidden_grid = [64, 128, 256]
-    lr_grid = [0.01, 0.001, 0.0005]
-
-    best_params, best_acc = grid_search_mlp(X_train, y_train, X_test, y_test, n_inputs, n_outputs, hidden_grid, lr_grid, epochs=1000, seed=42)
-    print(f"\nMelhor configuração (Grid Search): n_hidden={best_params[0]}, learning_rate={best_params[1]}, acurácia={best_acc:.4f}")
+    lr_grid = [0.1, 0.05, 0.01, 0.005, 0.001, 0.0005]
+    epochs = [10, 100, 500, 1000, 5000, 10000, 50000, 100000, 500000]
+    # for epoch in epochs:
+    #     print(f"\nTreinando com {epoch} épocas...")
+    #     best_params, best_acc = grid_search_mlp(X_train, y_train, X_test, y_test, n_inputs, n_outputs, hidden_grid, lr_grid, epochs=epoch)
+    #     print(f"\nMelhor configuração (Grid Search): n_hidden={best_params[0]}, learning_rate={best_params[1]}, acurácia={best_acc:.4f}")
+    #     with open(f"saidas/gs/{epoch}_epochs.txt", "w") as f:
+    #         f.write(f"Melhor configuração (Grid Search): n_hidden={best_params[0]}, learning_rate={best_params[1]}, acurácia={best_acc:.4f}\n")
 
     # Exemplo de uso da validação cruzada:
-    # best_params, best_acc = cross_validate_mlp(X_train, y_train, n_splits=5, n_inputs=n_inputs, n_outputs=n_outputs, hidden_grid=hidden_grid, lr_grid=lr_grid, epochs=300)
-    # print(f"Melhor configuração (CV): n_hidden={best_params[0]}, learning_rate={best_params[1]}, acurácia média={best_acc:.4f}")
+    for epoch in epochs:
+        print(f"\nTreinando com {epoch} épocas...")
+        best_params, best_acc = cross_validate_mlp(X_train, y_train, n_splits=5, n_inputs=n_inputs, n_outputs=n_outputs, hidden_grid=hidden_grid, lr_grid=lr_grid, epochs=epoch)
+        print(f"Melhor configuração (CV): n_hidden={best_params[0]}, learning_rate={best_params[1]}, acurácia média={best_acc:.4f}")
+        with open(f"saidas/cv/{epoch}_epochs.txt", "w") as f:
+            f.write(f"Melhor configuração (CV): n_hidden={best_params[0]}, learning_rate={best_params[1]}, acurácia média={best_acc:.4f}\n")

@@ -513,6 +513,7 @@ if __name__ == "__main__":
     y_train_raw, y_test_raw = y_raw[:-130], y_raw[-130:]
 
     # One-hot encode dos rótulos
+    y = one_hot_encode(y_raw)
     y_train, classes = one_hot_encode(y_train_raw)
     y_test, _ = one_hot_encode(y_test_raw)
 
@@ -576,7 +577,7 @@ if __name__ == "__main__":
         print(f"\nTreinando com {epoch} épocas (validação cruzada)...")
         start_time = time.time()
         best_params, best_acc, best_model = cross_validate_mlp(
-            X, y_raw, 
+            X_train, y_train, 
             n_splits=5, 
             n_inputs=n_inputs, 
             n_outputs=n_outputs, 

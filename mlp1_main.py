@@ -10,6 +10,7 @@ def sigmoid_deriv(x):
     return x * (1 - x)
 
 def softmax(x):
+    # Transforma um vetor de valores reais em uma distribuição de probabilidade
     exp_x = np.exp(x - np.max(x, axis=1, keepdims=True))
     return exp_x / np.sum(exp_x, axis=1, keepdims=True)
 
@@ -54,35 +55,55 @@ class MLP:
         for val in all_weights:
             print(val)
             
-    def save_hyperparams(self, path):
-        """
-        Salva hiperparâmetros em arquivo
-        """
-        with open(path, 'w') as f:
-            f.write(f"n_inputs: {self.weights_input_hidden.shape[0]}\n")
-            f.write(f"n_hidden: {self.weights_input_hidden.shape[1]}\n")
-            f.write(f"n_outputs: {self.weights_hidden_output.shape[1]}\n")
-            f.write(f"learning_rate: {self.learning_rate}\n")
-            if self.seed is not None:
-                f.write(f"seed: {self.seed}\n")
-
     def forward(self, X):
         self.input = X
         self.hidden = sigmoid(np.dot(self.input, self.weights_input_hidden) + self.bias_hidden)
         self.output = softmax(np.dot(self.hidden, self.weights_hidden_output) + self.bias_output)
         return self.output
 
+    def predict(self, X):
+        return self.forward(X)
+    
     def backward(self, y_true):
+        # Calcula o erro na camada de saída: diferença entre saída prevista e valor verdadeiro
         output_error = self.output - y_true
         output_delta = output_error
+        # Propaga o erro para a camada escondida através dos pesos
         hidden_error = output_delta.dot(self.weights_hidden_output.T)
+        # Calcula o delta da camada escondida considerando a derivada da função de ativação sigmoid
         hidden_delta = hidden_error * sigmoid_deriv(self.hidden)
+        # Atualiza os pesos entre camada escondida e saída usando gradiente descendente
         self.weights_hidden_output -= self.hidden.T.dot(output_delta) * self.learning_rate
+        # Atualiza os bias da camada de saída
         self.bias_output -= np.sum(output_delta, axis=0, keepdims=True) * self.learning_rate
+        # Atualiza os pesos entre camada de entrada e escondida
         self.weights_input_hidden -= self.input.T.dot(hidden_delta) * self.learning_rate
+        # Atualiza os bias da camada escondida
         self.bias_hidden -= np.sum(hidden_delta, axis=0, keepdims=True) * self.learning_rate
+        # Retorna o erro de entropia cruzada como métrica de desempenho
         return cross_entropy(y_true, self.output)
 
+    def train_sem_parada(self, X, y, epochs, save_error_path=None):
+        """
+        Treina a rede neural sem mecanismo de parada antecipada.
+        Nesta versão, a taxa de aprendizado permanece constante durante
+        todo o treinamento e todas as épocas serão executadas.
+        """
+        errors = []
+        
+        for epoch in range(epochs):
+            self.forward(X)
+            error = self.backward(y)
+            errors.append(error)
+            
+            # print(f"Época {epoch}, erro médio: {error}, lr: {self.learning_rate:.6f}")
+            
+        if save_error_path:
+            with open(save_error_path, 'w') as f:
+                for e in errors:
+                    f.write(f"{e}\n")
+        return errors    
+    
     def train(self, X, y, epochs, save_error_path=None, decay=0.99, patience=10):
         errors = []
         best_error = float('inf')
@@ -106,57 +127,6 @@ class MLP:
                     f.write(f"{e}\n")
         return errors
         
-    def train_sem_parada(self, X, y, epochs, save_error_path=None):
-        """
-        Treina a rede neural sem mecanismo de parada antecipada.
-        Nesta versão, a taxa de aprendizado permanece constante durante
-        todo o treinamento e todas as épocas serão executadas.
-        """
-        errors = []
-        
-        for epoch in range(epochs):
-            self.forward(X)
-            error = self.backward(y)
-            errors.append(error)
-            
-            # print(f"Época {epoch}, erro médio: {error}, lr: {self.learning_rate:.6f}")
-            
-        if save_error_path:
-            with open(save_error_path, 'w') as f:
-                for e in errors:
-                    f.write(f"{e}\n")
-        return errors    
-    
-    def predict(self, X):
-        return self.forward(X)
-        
-    def save_test_outputs(self, X_test, y_test, classes, path):
-        """
-        Salva as saídas produzidas pela rede neural para cada um dos dados de teste
-        
-        Parâmetros:
-        X_test -- Dados de teste
-        y_test -- Rótulos one-hot dos dados de teste
-        classes -- Lista de classes (rótulos originais)
-        path -- Caminho para salvar o arquivo de saída
-        """
-        outputs = self.predict(X_test)
-        y_pred_labels = np.argmax(outputs, axis=1)
-        y_true_labels = np.argmax(y_test, axis=1)
-        
-        with open(path, 'w') as f:
-            f.write("Índice,Classe Verdadeira,Classe Prevista,Probabilidades\n")
-            for i, (true_idx, pred_idx) in enumerate(zip(y_true_labels, y_pred_labels)):
-                true_class = classes[true_idx]
-                pred_class = classes[pred_idx]
-                probs = outputs[i]
-                probs_str = ",".join([f"{p:.6f}" for p in probs])
-                f.write(f"{i},{true_class},{pred_class},{probs_str}\n")
-                
-        # Calcula e retorna a acurácia
-        acc = np.mean(y_pred_labels == y_true_labels)
-        return acc
-    
     def save_test_outputs(self, X_test, y_test, classes, path):
         """
         Salva as saídas produzidas pela rede neural para cada um dos dados de teste
@@ -187,16 +157,6 @@ class MLP:
     def evaluate_with_confusion_matrix(self, X_test, y_test, classes, save_path=None):
         """
         Avalia o modelo usando matriz de confusão e retorna métricas detalhadas.
-        
-        Parâmetros:
-        X_test -- Dados de teste
-        y_test -- Rótulos one-hot dos dados de teste
-        classes -- Lista de classes (rótulos originais)
-        save_path -- Caminho para salvar a matriz de confusão (opcional)
-        
-        Retorna:
-        confusion_matrix -- Matriz de confusão
-        accuracy -- Acurácia global do modelo
         """
         # Obtém as previsões do modelo
         outputs = self.predict(X_test)
@@ -220,17 +180,8 @@ class MLP:
         return conf_matrix, accuracy
     
 def one_hot_encode(y):
-    """
-    Converte rótulos categóricos em vetores para uso em redes neurais.
+    # Converte rótulos categóricos em vetores para uso em redes neurais.
     
-    A codificação one-hot transforma cada categoria em um vetor binário onde apenas
-    uma posição contém o valor 1 (correspondente à classe) e todas as outras são 0.
-    Esta representação é essencial para problemas de classificação multiclasse em
-    redes neurais, pois permite:
-        Trabalhar com categorias não-numéricas
-        Evitar implicar relações de ordem entre as classes
-        Compatibilidade com funções de perda como cross-entropy
-    """
     classes = sorted(list(set(y)))
     class_to_idx = {c: i for i, c in enumerate(classes)}
     y_idx = np.array([class_to_idx[c] for c in y])
@@ -238,7 +189,7 @@ def one_hot_encode(y):
     one_hot[np.arange(len(y)), y_idx] = 1
     return one_hot, classes
 
-def grid_search_mlp(X_train, y_train, X_test, y_test, n_inputs, n_outputs, hidden_grid, lr_grid, epochs=1000, seed=42, parada_antecipada=True, output_dir=None, classes=None): 
+def grid_search_mlp(X_train, y_train, X_test, y_test, n_inputs, n_outputs, hidden_grid, lr_grid, epochs=1000, seed=42, parada_antecipada=True, classes=None): 
     """
     Realiza uma busca em grade (grid search) para encontrar a melhor configuração
     de hiperparâmetros para a rede neural MLP.
@@ -290,7 +241,7 @@ def grid_search_mlp(X_train, y_train, X_test, y_test, n_inputs, n_outputs, hidde
     
     return best_params, best_acc, best_model
 
-def cross_validate_mlp(X, y, n_splits, n_inputs, n_outputs, hidden_grid, lr_grid, epochs=1000, seed=42, classes=None):
+def cross_validate_mlp(X, y, n_splits, n_inputs, n_outputs, hidden_grid, lr_grid, epochs=1000, seed=None, classes=None):
     """
     Definimos uma seed para garantir resultados reproduzíveis
     Criamos índices para todos os exemplos e os embaralhamos aleatoriamente
@@ -300,8 +251,8 @@ def cross_validate_mlp(X, y, n_splits, n_inputs, n_outputs, hidden_grid, lr_grid
     no conjunto de validação, e que a divisão seja aleatória e balanceada.
     """
     # Cria diretório para salvar os pesos
-
-    np.random.seed(seed)
+    if seed is not None:
+        np.random.seed(seed)
     n_samples = X.shape[0]
     indices = np.arange(n_samples)
     np.random.shuffle(indices)
@@ -398,19 +349,8 @@ def cross_validate_mlp(X, y, n_splits, n_inputs, n_outputs, hidden_grid, lr_grid
     return best_params, best_acc, best_model
 
 def calculate_confusion_matrix(y_true, y_pred, n_classes):
-    """
-    Calcula a matriz de confusão para um problema de classificação multiclasse.
+    # Calcula a matriz de confusão para um problema de classificação multiclasse.
     
-    Parâmetros:
-    y_true -- Rótulos verdadeiros (índices das classes)
-    y_pred -- Rótulos preditos (índices das classes)
-    n_classes -- Número de classes
-    
-    Retorna:
-    conf_matrix -- Matriz de confusão de tamanho (n_classes, n_classes)
-                  onde conf_matrix[i, j] é o número de instâncias da classe i
-                  que foram classificadas como classe j
-    """
     # Inicializa a matriz de confusão com zeros
     conf_matrix = np.zeros((n_classes, n_classes), dtype=int)
     
@@ -580,19 +520,19 @@ if __name__ == "__main__":
     n_inputs = X_train.shape[1]
     n_outputs = y_train.shape[1]
 
-    # Defina os grids de hiperparâmetros
+    # Define os grids de hiperparâmetros
     hidden_grid = [32, 42, 50, 72, 98, 111, 121, 128]
     lr_grid = [0.1, 0.01, 0.001]
     epochs = [10, 100, 500, 1000, 5000, 10000]
-    # epochs = [10, 100]
 
+    # Cria diretórios para as saídas
     output_dir = "saidas"
     os.makedirs(output_dir, exist_ok=True)
-    
-    # Cria diretórios para as saídas
     os.makedirs("saidas/gs", exist_ok=True)
     os.makedirs("saidas/gsp", exist_ok=True)
-    os.makedirs("saidas/cv", exist_ok=True)    # Treinamento sem parada antecipada:
+    os.makedirs("saidas/cv", exist_ok=True)  
+    
+  # Treinamento sem parada antecipada:
     for epoch in epochs:
         print(f"\nTreinando com {epoch} épocas (sem parada antecipada)...")
         start_time = time.time()
@@ -602,7 +542,6 @@ if __name__ == "__main__":
             hidden_grid, lr_grid, 
             epochs=epoch, 
             parada_antecipada=False, 
-            output_dir=output_dir,
             classes=classes  # Passa as classes para calcular a matriz de confusão
         )
         elapsed_time = time.time() - start_time
@@ -622,7 +561,6 @@ if __name__ == "__main__":
             hidden_grid, lr_grid, 
             epochs=epoch, 
             parada_antecipada=True, 
-            output_dir=output_dir,
             classes=classes  # Passa as classes para calcular a matriz de confusão
         )
         elapsed_time = time.time() - start_time
@@ -638,7 +576,7 @@ if __name__ == "__main__":
         print(f"\nTreinando com {epoch} épocas (validação cruzada)...")
         start_time = time.time()
         best_params, best_acc, best_model = cross_validate_mlp(
-            X_train, y_train, 
+            X, y_raw, 
             n_splits=5, 
             n_inputs=n_inputs, 
             n_outputs=n_outputs, 
